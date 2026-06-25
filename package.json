@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "bin": {
-    "router-radar": "./bin/cli.js"
+    "router-radar": "./bin/cli.js",
+    "network-environment-analyzer": "./bin/cli.js"
   },
   "scripts": {
     "dev:frontend": "vite",
