@@ -1,32 +1,105 @@
-# React + TypeScript + Vite
+# 📡 Сетевой Радар (Network Router Diagnostics Agent)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Локальный агент для диагностики роутера, анализа Wi-Fi и базовых сетевых настроек. MVP-версия сканирует конфигурацию роутера и окружающий радиоэфир, оценивает безопасность и стабильность, а затем выдает список персональных рекомендаций с точными путями в интерфейсе вашей модели роутера.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## ✨ Основные возможности
+* **Интеллектуальное автоопределение**: сканирует HTTP/UPnP заголовки и XML-описания для автоматического определения бренда и прошивки.
+* **Поддержка популярных брендов**:
+  * Keenetic (KeeneticOS)
+  * OpenWrt (LuCI)
+  * ASUS (ASUSWRT)
+  * FRITZ!Box (FRITZ!OS)
+  * Xiaomi (MiWiFi)
+  * Huawei Stock
+  * D-Link Stock
+  * Tenda Stock
+  * TP-Link / Generic TR-064
+* **Локальный Wi-Fi сканер**: считывает реальную загруженность каналов и радиоокружение на уровне ОС.
+* **Адаптивные пути настроек**: для каждого из 18 правил диагностики показывает точный путь до нужного меню в вашей прошивке (например, `Advanced Settings -> Wireless -> General -> Control Channel` для ASUS).
+* **Стильный интерфейс**: современная панель управления в темном режиме с эффектом Glassmorphism.
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🚀 Способ 1: Мгновенный запуск одной командой (без клонирования)
 
-## Expanding the Oxlint configuration
+Если у вас установлен **Node.js**, вы можете запустить утилиту прямо с GitHub одной командой в терминале:
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npx --force github:bkaganovich-stack/network-environment-analyzer
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+> **Примечание:** Если автоматический запуск через двоеточие не поддерживается вашей версией `npm`, выполните:
+> ```bash
+> npx -p github:bkaganovich-stack/network-environment-analyzer router-radar
+> ```
+
+---
+
+## 🛠️ Способ 2: Запуск из локального исходного кода
+
+### 1. Подготовка требований
+Убедитесь, что на компьютере установлены **Node.js** (версии 18 и выше) и **Git**.
+
+### 2. Клонирование репозитория
+Откройте терминал и выполните команду для скачивания исходного кода:
+```bash
+git clone https://github.com/bkaganovich-stack/network-environment-analyzer.git
+```
+
+### 3. Переход в папку проекта
+```bash
+cd network-environment-analyzer
+```
+
+### 4. Установка зависимостей
+Установите библиотеки, необходимые для работы сервера и сборки интерфейса:
+```bash
+npm install
+```
+
+### 5. Сборка фронтенда
+Скомпилируйте React + TypeScript интерфейс в статические файлы:
+```bash
+npm run build
+```
+
+### 6. Запуск диагностического агента
+Запустите сервер и откройте веб-интерфейс:
+```bash
+node bin/cli.js
+```
+*(Или используйте команду `npm run start`)*
+
+После этого в вашем браузере автоматически откроется страница `http://localhost:3001`.
+
+---
+
+## 🔍 Устранение неполадок
+
+### ❌ В Windows пишет: «Имя "npx" не распознано...»
+* **Причина:** Не установлен Node.js, либо терминал не обновлен.
+* **Решение:** Скачайте и установите Node.js с сайта [nodejs.org](https://nodejs.org/). **Обязательно перезагрузите терминал** (PowerShell/CMD) после установки.
+
+### ❌ В Ubuntu/Linux ошибка при запуске `npx github:...`
+* **Причина:** В системе не установлен Git, который необходим npm для скачивания репозиториев с GitHub.
+* **Решение:** Установите Git в терминале:
+  ```bash
+  sudo apt update && sudo apt install git -y
+  ```
+
+### ❌ Порт 3001 занят
+* **Решение:** Вы можете переопределить порт при локальном запуске, задав переменную окружения `PORT`:
+  ```bash
+  PORT=3002 node bin/cli.js
+  ```
+
+---
+
+## 🛑 Как выключить и удалить?
+1. В окне терминала, где запущен скрипт, нажмите **`Ctrl + C`** — сервер сразу остановится и освободит порт.
+2. При запуске через `npx` файлы скачиваются во временную кэш-директорию npm и не остаются в системе. Если вы хотите очистить этот кэш вручную, выполните:
+   ```bash
+   npm cache clean --force
+   ```
