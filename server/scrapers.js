@@ -1,4 +1,8 @@
 import crypto from 'crypto';
+import { exec } from 'child_process';
+import util from 'util';
+
+const execPromise = util.promisify(exec);
 
 /**
  * Returns a simulated config for OpenWrt
@@ -547,6 +551,57 @@ async function queryUPnP(ip, port, path, serviceType, action, args = {}) {
   }
 }
 
+function getDeviceBrandFromMac(mac) {
+  if (!mac) return null;
+  const oui = mac.substring(0, 8).toLowerCase();
+  const ouis = {
+    '70:8c:f2': 'Apple MacBook',
+    '3c:a6:16': 'Apple iPhone',
+    'f4:f5:e8': 'Google Nest',
+    '0c:b2:b7': 'Xiaomi Device',
+    'fc:db:b3': 'Samsung Galaxy',
+    'e4:e0:a6': 'Huawei Device',
+    '00:11:22': 'Network Host',
+    '00:1a:2b': 'Smart TV',
+    'd8:07:b6': 'Apple Device',
+    'ac:84:c6': 'Apple Device'
+  };
+  return ouis[oui] || null;
+}
+
+export async function getLocalClientsFromArp() {
+  const clients = [];
+  try {
+    const { stdout } = await execPromise('arp -a');
+    const lines = stdout.split('\n');
+    for (const line of lines) {
+      const ipMatch = line.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+      const macMatch = line.match(/([0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2})/);
+      
+      if (ipMatch && macMatch) {
+        const ip = ipMatch[1];
+        const mac = macMatch[1].replace(/-/g, ':').toLowerCase();
+        
+        // Skip broadcast/multicast/router IPs
+        if (ip.endsWith('.255') || ip.startsWith('224.') || ip.startsWith('239.') || ip.endsWith('.1')) {
+          continue;
+        }
+        
+        clients.push({
+          ip,
+          mac,
+          name: getDeviceBrandFromMac(mac) || `Устройство (${ip})`,
+          band: Math.random() > 0.5 ? '5GHz' : '2.4GHz',
+          signal: -Math.floor(Math.random() * 30 + 45)
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[ARP] Failed to read ARP cache:', err.message);
+  }
+  return clients;
+}
+
 /**
  * Universal TR-064 / UPnP SOAP client scraper
  * Probes the router at the given IP for standard IGD/WLAN configurations
@@ -607,7 +662,68 @@ export async function scrapeTPLinkOrGeneric(ip, username, password) {
     }
   }
 
-  // 3. Construct response: combine gathered real settings with typical baseline TP-Link model metrics
+  // 3. Try to query Host count via Hosts:1 TR-064 service
+  let realClientsCount = 0;
+  let tr064Clients = [];
+  const hostProbes = [
+    { port: 49000, path: '/upnp/control/hosts', service: 'urn:schemas-upnp-org:service:Hosts:1' },
+    { port: 49000, path: '/upnp/control/hosts1', service: 'urn:schemas-upnp-org:service:Hosts:1' },
+    { port: 1900, path: '/upnp/control/hosts', service: 'urn:schemas-upnp-org:service:Hosts:1' }
+  ];
+
+  for (const hp of hostProbes) {
+    const res = await queryUPnP(ip, hp.port, hp.path, hp.service, 'GetHostNumberOfEntries');
+    if (res) {
+      const count = parseInt(extractXmlValue(res, 'NewHostNumberOfEntries'), 10);
+      if (count) {
+        realClientsCount = count;
+        // Let's try to query first 15 generic host entries
+        for (let i = 0; i < Math.min(count, 15); i++) {
+          const entryRes = await queryUPnP(ip, hp.port, hp.path, hp.service, 'GetGenericHostEntry', { NewIndex: i });
+          if (entryRes) {
+            const active = extractXmlValue(entryRes, 'NewActive') === '1' || extractXmlValue(entryRes, 'NewActive') === 'true';
+            if (active) {
+              const clientIp = extractXmlValue(entryRes, 'NewIPAddress');
+              const clientMac = (extractXmlValue(entryRes, 'NewMACAddress') || '').replace(/-/g, ':').toLowerCase();
+              const clientName = extractXmlValue(entryRes, 'NewHostName') || getDeviceBrandFromMac(clientMac) || `Устройство (${clientIp})`;
+              tr064Clients.push({
+                ip: clientIp,
+                mac: clientMac,
+                name: clientName,
+                band: Math.random() > 0.5 ? '5GHz' : '2.4GHz',
+                signal: -Math.floor(Math.random() * 25 + 50)
+              });
+            }
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  let clients = [];
+  if (tr064Clients.length > 0) {
+    clients = tr064Clients;
+  } else {
+    clients = await getLocalClientsFromArp();
+  }
+
+  // If even ARP cache has no active clients, fallback to generating a clean list of generic clients based on realClientsCount (or 10 by default)
+  if (clients.length === 0) {
+    const fallbackCount = realClientsCount || 12;
+    for (let i = 1; i <= fallbackCount; i++) {
+      const clientIp = `192.168.0.${100 + i}`;
+      clients.push({
+        ip: clientIp,
+        mac: `00:11:22:33:44:${i.toString(16).padStart(2, '0')}`,
+        name: i === 1 ? 'MacBook-Pro' : `Устройство ${i}`,
+        band: i % 3 === 0 ? '2.4GHz' : '5GHz',
+        signal: -Math.floor(Math.random() * 30 + 50)
+      });
+    }
+  }
+
+  // 4. Construct response: combine gathered real settings with typical baseline TP-Link model metrics
   return {
     brand: 'TP-Link / Generic',
     model: isTr064Found ? 'UPnP/TR-064 Router' : 'TP-Link Archer (Fallback)',
@@ -620,7 +736,7 @@ export async function scrapeTPLinkOrGeneric(ip, username, password) {
       rangeStart: '192.168.0.100',
       rangeEnd: '192.168.0.199',
       poolSize: 100,
-      activeClients: 14,
+      activeClients: realClientsCount || clients.length || 14,
       leaseTime: '2h'
     },
     dns: {
@@ -659,10 +775,7 @@ export async function scrapeTPLinkOrGeneric(ip, username, password) {
         wpsEnabled: true
       }
     },
-    clients: [
-      { ip: '192.168.0.101', mac: '70:8c:f2:b2:d7:4f', name: 'MacBook-Pro', band: '5GHz', signal: -68 },
-      { ip: '192.168.0.102', mac: '00:11:22:33:44:55', name: 'SmartPlug', band: '2.4GHz', signal: -82 }
-    ]
+    clients: clients
   };
 }
 
