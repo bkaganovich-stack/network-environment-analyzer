@@ -271,11 +271,20 @@ export function runDiagnostics(config, wifiScan = []) {
   }
 
   // 5. Rule Security: Weak encryption mode
-  const weakEncryptions = ['wep', 'wpa', 'none', 'psk-mixed', 'wpa-wpa2'];
   const enc2g = w2.encryption ? w2.encryption.toLowerCase() : '';
   const enc5g = w5.encryption ? w5.encryption.toLowerCase() : '';
-  if ((w2.enabled && weakEncryptions.some(we => enc2g.includes(we))) || 
-      (w5.enabled && weakEncryptions.some(we => enc5g.includes(we)))) {
+
+  const isWeakEncryption = (enc) => {
+    if (!enc || enc === 'none' || enc === 'open') return true;
+    return enc.includes('wep') || 
+           enc.includes('tkip') || 
+           enc.includes('mixed') || 
+           enc.includes('wpa-wpa2') || 
+           (enc.includes('wpa') && !enc.includes('wpa2') && !enc.includes('wpa3'));
+  };
+
+  if ((w2.enabled && isWeakEncryption(enc2g)) || 
+      (w5.enabled && isWeakEncryption(enc5g))) {
     score -= 15;
     
     let currentVal = `2.4G: ${w2.encryption || 'Нет'}`;

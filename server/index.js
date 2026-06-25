@@ -42,10 +42,14 @@ app.post('/api/diagnose', async (req, res) => {
   const { ip, username, password, model } = req.body;
 
   try {
+    // 1. Scan Local Wi-Fi Environment first (macOS commands or fallback)
+    const wifiScan = await scanWifi();
+    const currentNet = wifiScan.find(n => n.isCurrent) || null;
+
     let routerConfig;
     const isDemo = model.includes('(Demo)') || model.includes('Simulated');
 
-    // 1. Gather Router Config (Real or Simulated)
+    // 2. Gather Router Config (Real or Simulated)
     if (isDemo) {
       if (model.includes('Keenetic')) {
         routerConfig = getSimulatedKeeneticConfig();
@@ -84,18 +88,15 @@ app.post('/api/diagnose', async (req, res) => {
         routerConfig = await scrapeOpenWrt(ip, username, password || '');
       } else if (['TP-Link', 'ASUSWRT', 'FRITZ!Box', 'Xiaomi MiWiFi', 'Huawei', 'D-Link', 'Tenda', 'Generic'].some(b => activeModel.includes(b) || activeModel === b)) {
         const matchedBrand = ['TP-Link', 'ASUSWRT', 'FRITZ!Box', 'Xiaomi MiWiFi', 'Huawei', 'D-Link', 'Tenda', 'Generic'].find(b => activeModel.includes(b) || activeModel === b) || 'Generic';
-        routerConfig = await scrapeTPLinkOrGeneric(ip, username, password || '');
+        routerConfig = await scrapeTPLinkOrGeneric(ip, username, password || '', currentNet);
         routerConfig.brand = matchedBrand;
         routerConfig.model = `${matchedBrand} Router (${model === 'auto' ? 'Auto-detected' : 'Manual'})`;
       } else {
-        routerConfig = await scrapeTPLinkOrGeneric(ip, username, password || '');
+        routerConfig = await scrapeTPLinkOrGeneric(ip, username, password || '', currentNet);
         routerConfig.brand = 'Generic';
         routerConfig.model = 'Generic Router (Fallback)';
       }
     }
-
-    // 2. Scan Local Wi-Fi Environment (macOS commands or fallback)
-    const wifiScan = await scanWifi();
 
     // 3. Execute Rule-Based Diagnostics Engine
     const diagnosticReport = runDiagnostics(routerConfig, wifiScan);
