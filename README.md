@@ -82,24 +82,52 @@ node bin/cli.js
 * **Причина:** Не установлен Node.js, либо терминал не обновлен.
 * **Решение:** Скачайте и установите Node.js с сайта [nodejs.org](https://nodejs.org/). **Обязательно перезагрузите терминал** (PowerShell/CMD) после установки.
 
-### ❌ В Ubuntu/Linux ошибка при запуске `npx github:...`
-* **Причина:** В системе не установлен Git, который необходим npm для скачивания репозиториев с GitHub.
-* **Решение:** Установите Git в терминале:
-  ```bash
-  sudo apt update && sudo apt install git -y
-  ```
+### ❌ В Windows PowerShell: «выполнение сценариев отключено в этой системе...»
+* **Причина:** Политика безопасности PowerShell по умолчанию блокирует запуск внешних скриптов (файлов `.ps1`).
+* **Решение:**
+  * Запускайте команду через `npx.cmd` вместо `npx`:
+    ```powershell
+    npx.cmd --force github:bkaganovich-stack/network-environment-analyzer
+    ```
+  * Или временно разрешите скрипты для текущей сессии:
+    ```powershell
+    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+    ```
+  * Или используйте классическую командную строку (`cmd.exe`).
+
+### ❌ Ошибка `ENOENT: spawn git` на Windows или Linux
+* **Причина:** В системе не установлен Git, который необходим npm/npx для загрузки репозиториев напрямую с GitHub.
+* **Решение:**
+  * **Windows:** Установите Git с сайта [git-scm.com](https://git-scm.com/) и перезагрузите терминал.
+  * **Ubuntu/Linux:** Выполните команду `sudo apt update && sudo apt install git -y`.
+  * **Альтернатива без установки Git:** Скачайте репозиторий в формате ZIP-архива, распакуйте, откройте терминал в папке проекта и запустите вручную через `npm install && npm run build && node bin/cli.js`.
 
 ### ❌ Порт 3001 занят
 * **Решение:** Вы можете переопределить порт при локальном запуске, задав переменную окружения `PORT`:
-  ```bash
-  PORT=3002 node bin/cli.js
-  ```
+  * **Linux/Ubuntu/macOS:**
+    ```bash
+    PORT=3002 node bin/cli.js
+    ```
+  * **Windows (PowerShell):**
+    ```powershell
+    $env:PORT=3002; node bin/cli.js
+    ```
 
 ---
 
 ## 🛑 Как выключить и удалить?
-1. В окне терминала, где запущен скрипт, нажмите **`Ctrl + C`** — сервер сразу остановится и освободит порт.
-2. При запуске через `npx` файлы скачиваются во временную кэш-директорию npm и не остаются в системе. Если вы хотите очистить этот кэш вручную, выполните:
-   ```bash
-   npm cache clean --force
-   ```
+
+### 1. Как остановить сервер?
+* В окне терминала нажмите **`Ctrl + C`**.
+* Если вы закрыли терминал, но сервер продолжает работать в фоне:
+  * **Linux/Ubuntu/macOS:** Выполните `fuser -k 3001/tcp` или `npx kill-port 3001`.
+  * **Windows:** Выполните `npx.cmd kill-port 3001`.
+
+### 2. Как удалить проект?
+* **При запуске через `npx`:** Проект не сохраняется на диске в рабочей папке. Чтобы стереть временные файлы из кэша npm, выполните:
+  ```bash
+  npm cache clean --force
+  ```
+* **При клонировании через Git:** Удалите папку проекта с диска:
+  * **Linux/Ubuntu/macOS:** `rm -rf network-environment-analyzer`
+  * **Windows (PowerShell):** `rm -Recurse -Force network-environment-analyzer`
