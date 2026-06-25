@@ -62,6 +62,7 @@ interface ScanResult {
     cpuUsage: number;
     ramUsage: number;
     wanIp: string;
+    clientRetrievalMethod?: string;
     dhcp: {
       rangeStart: string;
       rangeEnd: string;
@@ -788,6 +789,26 @@ export default function App() {
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>Устройства, подключенные к роутеру в момент диагностики.</p>
 
                   <div className="client-list">
+                    {(scanResult.routerInfo.model.includes('Fallback') || scanResult.routerInfo.clientRetrievalMethod === 'arp') && (
+                      <div style={{ 
+                        padding: '0.8rem 1rem', 
+                        background: 'rgba(245, 158, 11, 0.05)', 
+                        border: '1px solid rgba(245, 158, 11, 0.15)', 
+                        borderRadius: '8px', 
+                        color: 'var(--text-muted)', 
+                        fontSize: '0.8rem', 
+                        lineHeight: 1.4, 
+                        marginBottom: '1rem',
+                        display: 'flex',
+                        gap: '0.5rem',
+                        alignItems: 'flex-start'
+                      }}>
+                        <Info size={16} style={{ flexShrink: 0, color: 'var(--color-warning)', marginTop: '0.1rem' }} />
+                        <span>
+                          <strong>Ограниченный режим (Fallback):</strong> Прямое подключение к API роутера заблокировано или не поддерживается. Список клиентов собран из локального ARP-кэша вашего компьютера и может быть неполным.
+                        </span>
+                      </div>
+                    )}
                     {scanResult.routerInfo.clients.length === 0 ? (
                       <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                         Подключенные беспроводные устройства не обнаружены.

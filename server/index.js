@@ -118,7 +118,8 @@ app.post('/api/diagnose', async (req, res) => {
         wps: routerConfig.wps,
         interfaces: routerConfig.interfaces,
         clientsCount: routerConfig.clients?.length || 0,
-        clients: routerConfig.clients || []
+        clients: routerConfig.clients || [],
+        clientRetrievalMethod: routerConfig.clientRetrievalMethod || 'router'
       },
       wifiEnvironment: wifiScan,
       report: diagnosticReport

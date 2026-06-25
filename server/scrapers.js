@@ -569,18 +569,41 @@ function getDeviceBrandFromMac(mac) {
   return ouis[oui] || null;
 }
 
-export async function getLocalClientsFromArp() {
+export function normalizeMacAddress(mac) {
+  if (!mac) return '';
+  const parts = mac.split(/[:-]/);
+  if (parts.length !== 6) return mac.toLowerCase();
+  return parts.map(p => p.padStart(2, '0').toLowerCase()).join(':');
+}
+
+export async function getLocalClientsFromArp(routerIp = null) {
   const clients = [];
   try {
+    // Perform a broadcast ping to populate the ARP cache
+    if (routerIp) {
+      const ipParts = routerIp.split('.');
+      if (ipParts.length === 4) {
+        const broadcastIp = `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}.255`;
+        console.log(`[ARP] Pinging broadcast IP ${broadcastIp} to discover active clients...`);
+        try {
+          await execPromise(`ping -c 2 -t 1 ${broadcastIp}`, { timeout: 2000 });
+        } catch (pingErr) {
+          // ignore ping exit codes
+        }
+      }
+    }
+
     const { stdout } = await execPromise('arp -a');
     const lines = stdout.split('\n');
     for (const line of lines) {
       const ipMatch = line.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
-      const macMatch = line.match(/([0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2})/);
+      // Regex that allows 1 or 2 digits per MAC address component (common on macOS)
+      const macMatch = line.match(/([0-9a-fA-F]{1,2}[:-][0-9a-fA-F]{1,2}[:-][0-9a-fA-F]{1,2}[:-][0-9a-fA-F]{1,2}[:-][0-9a-fA-F]{1,2}[:-][0-9a-fA-F]{1,2})/);
       
       if (ipMatch && macMatch) {
         const ip = ipMatch[1];
-        const mac = macMatch[1].replace(/-/g, ':').toLowerCase();
+        const rawMac = macMatch[1];
+        const mac = normalizeMacAddress(rawMac);
         
         // Skip broadcast/multicast/router IPs
         if (ip.endsWith('.255') || ip.startsWith('224.') || ip.startsWith('239.') || ip.endsWith('.1')) {
@@ -684,7 +707,8 @@ export async function scrapeTPLinkOrGeneric(ip, username, password, currentNet =
             const active = extractXmlValue(entryRes, 'NewActive') === '1' || extractXmlValue(entryRes, 'NewActive') === 'true';
             if (active) {
               const clientIp = extractXmlValue(entryRes, 'NewIPAddress');
-              const clientMac = (extractXmlValue(entryRes, 'NewMACAddress') || '').replace(/-/g, ':').toLowerCase();
+              const rawMac = extractXmlValue(entryRes, 'NewMACAddress') || '';
+              const clientMac = normalizeMacAddress(rawMac);
               const clientName = extractXmlValue(entryRes, 'NewHostName') || getDeviceBrandFromMac(clientMac) || `Устройство (${clientIp})`;
               tr064Clients.push({
                 ip: clientIp,
@@ -702,10 +726,13 @@ export async function scrapeTPLinkOrGeneric(ip, username, password, currentNet =
   }
 
   let clients = [];
+  let clientRetrievalMethod = 'router';
   if (tr064Clients.length > 0) {
     clients = tr064Clients;
+    clientRetrievalMethod = 'tr064';
   } else {
-    clients = await getLocalClientsFromArp();
+    clients = await getLocalClientsFromArp(ip);
+    clientRetrievalMethod = 'arp';
   }
 
   // If even ARP cache has no active clients, fallback to generating a clean list of generic clients based on realClientsCount (or 10 by default)
@@ -732,11 +759,12 @@ export async function scrapeTPLinkOrGeneric(ip, username, password, currentNet =
     cpuUsage: 18,
     ramUsage: 48,
     wanIp: wanIp !== 'Unknown' ? wanIp : '198.51.100.22',
+    clientRetrievalMethod: clientRetrievalMethod,
     dhcp: {
       rangeStart: '192.168.0.100',
       rangeEnd: '192.168.0.199',
       poolSize: 100,
-      activeClients: realClientsCount || clients.length || 14,
+      activeClients: clients.length,
       leaseTime: '2h'
     },
     dns: {
@@ -765,7 +793,7 @@ export async function scrapeTPLinkOrGeneric(ip, username, password, currentNet =
         wpsEnabled: false
       },
       wifi5g: {
-        ssid: ssid.includes('_5G') ? ssid : `${ssid}_5G`,
+        ssid: ssid, // Match 2.4GHz SSID by default to avoid false separate SSIDs warning
         enabled: true,
         band: '5GHz',
         channel: 36,
