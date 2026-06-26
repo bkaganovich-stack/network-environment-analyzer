@@ -92,6 +92,13 @@ export function parseSystemProfiler(stdout) {
     networks.push(currentNetwork);
   }
 
+  // Replace '<redacted>' SSIDs with friendly placeholder names showing their channel
+  networks.forEach((net, index) => {
+    if (net.ssid === '<redacted>') {
+      net.ssid = `Сеть #${index + 1} (Канал ${net.channel})`;
+    }
+  });
+
   return networks;
 }
 

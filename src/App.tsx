@@ -396,10 +396,21 @@ export default function App() {
       const halfWidth = net.width === 40 ? 4 : 2;
       if (Math.abs(net.channel - channel) <= halfWidth) {
         count++;
-        load += Math.max(0, 100 + net.signal);
+        // Weighted congestion contribution based on signal strength
+        if (net.signal >= -50) {
+          load += 45;
+        } else if (net.signal >= -65) {
+          load += 25;
+        } else if (net.signal >= -75) {
+          load += 12;
+        } else if (net.signal >= -85) {
+          load += 5;
+        } else {
+          load += 2;
+        }
       }
     });
-    const percentage = Math.min(100, Math.round((load / 130) * 100));
+    const percentage = Math.min(100, load);
     return { percentage, count };
   };
 
@@ -421,10 +432,21 @@ export default function App() {
       }
       if (overlap) {
         count++;
-        load += Math.max(0, 100 + net.signal);
+        // Weighted congestion contribution based on signal strength
+        if (net.signal >= -50) {
+          load += 45;
+        } else if (net.signal >= -65) {
+          load += 25;
+        } else if (net.signal >= -75) {
+          load += 12;
+        } else if (net.signal >= -85) {
+          load += 5;
+        } else {
+          load += 2;
+        }
       }
     });
-    const percentage = Math.min(100, Math.round((load / 130) * 100));
+    const percentage = Math.min(100, load);
     return { percentage, count };
   };
 
@@ -951,6 +973,27 @@ export default function App() {
                       ))}
                     </div>
                   </div>
+
+                  {scanResult.wifiEnvironment.some(net => net.ssid.includes('Сеть #')) && (
+                    <div style={{
+                      padding: '0.8rem 1rem',
+                      background: 'rgba(30, 144, 255, 0.05)',
+                      border: '1px solid rgba(30, 144, 255, 0.15)',
+                      borderRadius: '8px',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.8rem',
+                      lineHeight: 1.4,
+                      marginBottom: '1.25rem',
+                      display: 'flex',
+                      gap: '0.5rem',
+                      alignItems: 'flex-start'
+                    }}>
+                      <Info size={16} style={{ flexShrink: 0, color: '#1e90ff', marginTop: '0.1rem' }} />
+                      <span>
+                        <strong>Конфиденциальность macOS:</strong> Имена соседних сетей скрыты операционной системой. Чтобы отобразить реальные названия (SSID), предоставьте приложению «Терминал» (или вашей оболочке) доступ к службам геолокации в настройках конфиденциальности macOS.
+                      </span>
+                    </div>
+                  )}
 
                   {/* Graphical Channel Congestion Chart */}
                   <div style={{ marginBottom: '2rem', padding: '1.25rem', background: 'rgba(0,0,0,0.15)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.04)' }}>
