@@ -17,7 +17,8 @@ import {
   ArrowRight,
   Database,
   CheckCircle2,
-  Power
+  Power,
+  Share2
 } from 'lucide-react';
 
 // Unified schema definitions
@@ -52,6 +53,13 @@ interface Recommendation {
   location: string;
   currentValue: string;
   recommendedValue: string;
+}
+
+interface NetworkPingResult {
+  ip: string;
+  avg: number;
+  loss: number;
+  jitter: number;
 }
 
 interface ScanResult {
@@ -122,6 +130,14 @@ interface ScanResult {
     };
     recommendations: Recommendation[];
   };
+  networkDiagnostics: {
+    gateway: NetworkPingResult;
+    internet: NetworkPingResult;
+    dpi: {
+      status: 'Detected' | 'Not Detected' | 'Inconclusive';
+      details: string;
+    };
+  };
 }
 
 export default function App() {
@@ -143,7 +159,17 @@ export default function App() {
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
   const [recFilter, setRecFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
   const [wifiFilter, setWifiFilter] = useState<'all' | '2GHz' | '5GHz'>('all');
-  const [activeTab, setActiveTab] = useState<'issues' | 'wifi' | 'clients'>('issues');
+  const [activeTab, setActiveTab] = useState<'issues' | 'wifi' | 'network' | 'clients'>('issues');
+  const [shareToast, setShareToast] = useState<string | null>(null);
+  const [chartBand, setChartBand] = useState<'2.4GHz' | '5GHz'>('2.4GHz');
+
+  // Auto-dismiss share toast
+  useEffect(() => {
+    if (shareToast) {
+      const timer = setTimeout(() => setShareToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [shareToast]);
 
   // Fast auto-IP detection when changing router template
   useEffect(() => {
@@ -183,6 +209,93 @@ export default function App() {
       } catch (err) {
         // ignore because connection is closed as server shuts down
       }
+    }
+  };
+
+  const generateMarkdownReport = (res: ScanResult) => {
+    const issues = res.report.recommendations;
+    const criticalIssues = issues.filter(i => i.severity === 'critical');
+    const warningIssues = issues.filter(i => i.severity === 'warning');
+    
+    let report = `## Отчет о диагностике сети: ${res.routerInfo.brand} ${res.routerInfo.model}\n`;
+    report += `*Дата проведения:* ${new Date().toLocaleString('ru-RU')}\n`;
+    report += `*Оценка сети:* ${res.report.score}/100 (${getScoreText(res.report.score)})\n\n`;
+    
+    report += `### 📡 Информация об оборудовании\n`;
+    report += `- **ПО (Прошивка):** ${res.routerInfo.firmwareVersion}\n`;
+    report += `- **Uptime:** ${res.routerInfo.uptime}\n`;
+    report += `- **WAN IP:** ${res.routerInfo.wanIp}\n`;
+    report += `- **Активные DHCP клиенты:** ${res.routerInfo.dhcp.activeClients} из ${res.routerInfo.dhcp.poolSize}\n`;
+    report += `- **WPS Статус:** ${res.routerInfo.wps.enabled ? 'Включен (Уязвимо)' : 'Выключен'}\n`;
+    report += `- **UPnP Статус:** ${res.routerInfo.upnp.enabled ? 'Включен' : 'Выключен'}\n\n`;
+    
+    report += `### ⚡ Качество сети и DPI\n`;
+    report += `- **Локальный шлюз (${res.networkDiagnostics.gateway.ip}):** Latency ${res.networkDiagnostics.gateway.avg}ms, Jitter ${res.networkDiagnostics.gateway.jitter}ms, Loss ${res.networkDiagnostics.gateway.loss}%\n`;
+    report += `- **Внешний интернет (1.1.1.1):** Latency ${res.networkDiagnostics.internet.avg}ms, Jitter ${res.networkDiagnostics.internet.jitter}ms, Loss ${res.networkDiagnostics.internet.loss}%\n`;
+    report += `- **Статус фильтрации DPI:** ${res.networkDiagnostics.dpi.status} (${res.networkDiagnostics.dpi.details})\n\n`;
+    
+    report += `### ⚠️ Обнаруженные проблемы и рекомендации\n`;
+    if (issues.length === 0) {
+      report += `Проблем не обнаружено. Ваши настройки соответствуют лучшим практикам!\n`;
+    } else {
+      if (criticalIssues.length > 0) {
+        report += `#### 🚨 Критические (${criticalIssues.length}):\n`;
+        criticalIssues.forEach(i => {
+          report += `- **${i.title}** (${i.category})\n`;
+          report += `  *Проблема:* ${i.problem}\n`;
+          report += `  *Решение:* ${i.solution} (Раздел: ${i.location})\n`;
+        });
+        report += `\n`;
+      }
+      if (warningIssues.length > 0) {
+        report += `#### ⚠️ Предупреждения (${warningIssues.length}):\n`;
+        warningIssues.forEach(i => {
+          report += `- **${i.title}** (${i.category})\n`;
+          report += `  *Проблема:* ${i.problem}\n`;
+          report += `  *Решение:* ${i.solution} (Раздел: ${i.location})\n`;
+        });
+        report += `\n`;
+      }
+      const infoIssues = issues.filter(i => i.severity === 'info');
+      if (infoIssues.length > 0) {
+        report += `#### 💡 Советы (${infoIssues.length}):\n`;
+        infoIssues.forEach(i => {
+          report += `- **${i.title}**\n`;
+          report += `  *Решение:* ${i.solution}\n`;
+        });
+      }
+    }
+    
+    return report;
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setShareToast('Отчет скопирован в буфер обмена в формате Markdown!');
+    } catch (err) {
+      setShareToast('Не удалось скопировать отчет.');
+    }
+  };
+
+  const handleShareReport = async () => {
+    if (!scanResult) return;
+    const md = generateMarkdownReport(scanResult);
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Отчет о состоянии сети: ${scanResult.routerInfo.brand}`,
+          text: md
+        });
+        setShareToast('Успешно отправлено!');
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          await copyToClipboard(md);
+        }
+      }
+    } else {
+      await copyToClipboard(md);
     }
   };
 
@@ -274,6 +387,63 @@ export default function App() {
     if (score >= 60) return 'Удовлетворительно';
     return 'Критично';
   };
+
+  const get2gChannelLoad = (channel: number) => {
+    const networksInBand = scanResult?.wifiEnvironment.filter(n => n.band === '2GHz' || n.band === '2.4GHz') || [];
+    let load = 0;
+    let count = 0;
+    networksInBand.forEach(net => {
+      const halfWidth = net.width === 40 ? 4 : 2;
+      if (Math.abs(net.channel - channel) <= halfWidth) {
+        count++;
+        load += Math.max(0, 100 + net.signal);
+      }
+    });
+    const percentage = Math.min(100, Math.round((load / 130) * 100));
+    return { percentage, count };
+  };
+
+  const get5gChannelLoad = (channel: number) => {
+    const networksInBand = scanResult?.wifiEnvironment.filter(n => n.band === '5GHz') || [];
+    let load = 0;
+    let count = 0;
+    networksInBand.forEach(net => {
+      const chDiff = Math.abs(net.channel - channel);
+      let overlap = false;
+      if (net.channel === channel) {
+        overlap = true;
+      } else if (net.width === 40 && chDiff <= 4) {
+        overlap = true;
+      } else if (net.width === 80 && chDiff <= 12) {
+        overlap = true;
+      } else if (net.width === 160 && chDiff <= 28) {
+        overlap = true;
+      }
+      if (overlap) {
+        count++;
+        load += Math.max(0, 100 + net.signal);
+      }
+    });
+    const percentage = Math.min(100, Math.round((load / 130) * 100));
+    return { percentage, count };
+  };
+
+  const isChannelCurrent = (channel: number, band: '2GHz' | '5GHz') => {
+    if (band === '2GHz') {
+      const current2g = scanResult?.routerInfo.interfaces.wifi2g;
+      if (current2g?.enabled && current2g.channel === channel) return true;
+      const currentNet = scanResult?.wifiEnvironment.find(n => n.isCurrent);
+      if (currentNet && (currentNet.band === '2GHz' || currentNet.band === '2.4GHz') && currentNet.channel === channel) return true;
+    } else {
+      const current5g = scanResult?.routerInfo.interfaces.wifi5g;
+      if (current5g?.enabled && current5g.channel === channel) return true;
+      const currentNet = scanResult?.wifiEnvironment.find(n => n.isCurrent);
+      if (currentNet && currentNet.band === '5GHz' && currentNet.channel === channel) return true;
+    }
+    return false;
+  };
+
+  const channels5g = [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165];
 
   const filteredRecommendations = scanResult?.report.recommendations.filter(rec => {
     if (recFilter === 'all') return true;
@@ -527,6 +697,10 @@ export default function App() {
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Внешний WAN IP</span>
                 <p style={{ fontSize: '0.9rem', fontWeight: 600 }}>{scanResult.routerInfo.wanIp}</p>
               </div>
+              <button className="btn" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem', boxShadow: 'none' }} onClick={handleShareReport}>
+                <Share2 size={14} />
+                <span>Поделиться</span>
+              </button>
               <button className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }} onClick={handleReset}>
                 <RefreshCw size={14} />
                 <span>Новый скан</span>
@@ -642,6 +816,20 @@ export default function App() {
                   onClick={() => setActiveTab('wifi')}
                 >
                   Окружающий эфир ({scanResult.wifiEnvironment.length})
+                </button>
+                <button 
+                  className={`btn-secondary`}
+                  style={{ 
+                    background: activeTab === 'network' ? 'rgba(30, 144, 255, 0.15)' : 'transparent',
+                    borderColor: activeTab === 'network' ? 'var(--color-primary)' : 'transparent',
+                    padding: '0.5rem 1rem', 
+                    fontSize: '0.9rem',
+                    boxShadow: 'none',
+                    borderRadius: '8px'
+                  }}
+                  onClick={() => setActiveTab('network')}
+                >
+                  Качество сети / DPI
                 </button>
                 <button 
                   className={`btn-secondary`}
@@ -764,6 +952,135 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Graphical Channel Congestion Chart */}
+                  <div style={{ marginBottom: '2rem', padding: '1.25rem', background: 'rgba(0,0,0,0.15)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <div className="flex-between" style={{ marginBottom: '1.25rem' }}>
+                      <span style={{ fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        📊 Анализ загруженности каналов
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.25rem', background: 'rgba(255,255,255,0.04)', padding: '0.2rem', borderRadius: '6px' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{
+                            padding: '0.2rem 0.6rem',
+                            fontSize: '0.75rem',
+                            background: chartBand === '2.4GHz' ? 'rgba(30, 144, 255, 0.2)' : 'transparent',
+                            borderColor: chartBand === '2.4GHz' ? 'rgba(30, 144, 255, 0.4)' : 'transparent',
+                            color: chartBand === '2.4GHz' ? '#fff' : 'var(--text-muted)',
+                            borderRadius: '4px',
+                            boxShadow: 'none'
+                          }}
+                          onClick={() => setChartBand('2.4GHz')}
+                        >
+                          2.4 ГГц
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{
+                            padding: '0.2rem 0.6rem',
+                            fontSize: '0.75rem',
+                            background: chartBand === '5GHz' ? 'rgba(30, 144, 255, 0.2)' : 'transparent',
+                            borderColor: chartBand === '5GHz' ? 'rgba(30, 144, 255, 0.4)' : 'transparent',
+                            color: chartBand === '5GHz' ? '#fff' : 'var(--text-muted)',
+                            borderRadius: '4px',
+                            boxShadow: 'none'
+                          }}
+                          onClick={() => setChartBand('5GHz')}
+                        >
+                          5 ГГц
+                        </button>
+                      </div>
+                    </div>
+
+                    {chartBand === '2.4GHz' ? (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', height: '140px', alignItems: 'flex-end', paddingBottom: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', gap: '6px' }}>
+                          {Array.from({ length: 13 }, (_, i) => i + 1).map(ch => {
+                            const { percentage, count } = get2gChannelLoad(ch);
+                            const isCurrent = isChannelCurrent(ch, '2GHz');
+                            const barColor = percentage > 70 
+                              ? 'linear-gradient(to top, var(--color-critical-glow) 30%, var(--color-critical))' 
+                              : percentage > 35 
+                                ? 'linear-gradient(to top, var(--color-warning-glow) 30%, var(--color-warning))' 
+                                : 'linear-gradient(to top, var(--color-success-glow) 30%, var(--color-success))';
+                            
+                            return (
+                              <div key={ch} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', position: 'relative' }}>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', position: 'absolute', top: '-1.25rem', whiteSpace: 'nowrap' }}>
+                                  {count > 0 ? `${count} шт` : 'свободно'}
+                                </div>
+                                <div 
+                                  className={`channel-bar ${isCurrent ? 'current' : ''}`}
+                                  style={{
+                                    width: '100%',
+                                    height: `${Math.max(5, percentage)}%`,
+                                    background: barColor,
+                                    borderRadius: '4px 4px 0 0',
+                                    transition: 'height 0.5s ease',
+                                    position: 'relative'
+                                  }}
+                                  title={`Канал ${ch}: Загруженность ${percentage}%, сетей: ${count}`}
+                                >
+                                  {isCurrent && (
+                                    <div style={{ position: 'absolute', top: '-5px', left: '50%', transform: 'translateX(-50%)', width: '8px', height: '8px', background: '#1e90ff', borderRadius: '50%', boxShadow: '0 0 8px #1e90ff' }}></div>
+                                  )}
+                                </div>
+                                <div style={{ 
+                                  fontSize: '0.75rem', 
+                                  marginTop: '0.4rem', 
+                                  fontWeight: isCurrent ? 'bold' : 'normal',
+                                  color: isCurrent ? '#1e90ff' : 'var(--text-main)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}>
+                                  {ch} {isCurrent && '★'}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-dark)', marginTop: '0.75rem', textAlign: 'center' }}>
+                          ★ отмечен ваш текущий рабочий канал. Оптимальные каналы в 2.4 ГГц — это 1, 6 и 11 (не перекрывающиеся).
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(55px, 1fr))', gap: '8px', padding: '0.5rem 0' }}>
+                          {channels5g.map(ch => {
+                            const { percentage, count } = get5gChannelLoad(ch);
+                            const isCurrent = isChannelCurrent(ch, '5GHz');
+                            let statusClass = 'free';
+                            if (isCurrent) statusClass = 'current';
+                            else if (count > 0) statusClass = percentage > 50 ? 'busy' : 'occupied';
+
+                            return (
+                              <div 
+                                key={ch} 
+                                className={`channel-grid-item ${statusClass}`}
+                                title={`Канал ${ch}: Загруженность ${percentage}%, сетей: ${count}`}
+                              >
+                                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{ch}</span>
+                                {isCurrent ? (
+                                  <span style={{ fontSize: '0.55rem', display: 'block', textTransform: 'uppercase', fontWeight: 700 }}>Мой</span>
+                                ) : count > 0 ? (
+                                  <span style={{ fontSize: '0.55rem', display: 'block', color: 'var(--text-muted)' }}>{count} шт</span>
+                                ) : (
+                                  <span style={{ fontSize: '0.55rem', display: 'block', color: '#4ade80' }}>свободен</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-dark)', marginTop: '0.75rem', textAlign: 'center' }}>
+                          Каналы 5 ГГц не пересекаются напрямую, но широкие полосы (40/80/160 МГц) могут объединять соседние частоты.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="client-list">
                     {filteredWifi.length === 0 ? (
                       <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -802,7 +1119,155 @@ export default function App() {
                 </div>
               )}
 
-              {/* TAB 3: CLIENT DEVICES */}
+              {/* TAB 3: NETWORK QUALITY & DPI */}
+              {activeTab === 'network' && (
+                <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  {/* Ping Cards */}
+                  <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                    <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem' }}>
+                      <Activity size={16} style={{ color: '#1e90ff' }} />
+                      <span>Качество соединения (Ping / Latency)</span>
+                    </h4>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                      {/* Gateway Ping */}
+                      <div style={{ background: 'rgba(0,0,0,0.15)', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                        <div className="flex-between" style={{ marginBottom: '0.75rem' }}>
+                          <div>
+                            <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Локальный шлюз (Роутер)</span>
+                            <h5 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginTop: '0.1rem' }}>{scanResult.networkDiagnostics.gateway.ip}</h5>
+                          </div>
+                          <span style={{ 
+                            fontSize: '0.75rem', 
+                            padding: '0.25rem 0.5rem', 
+                            borderRadius: '4px',
+                            fontWeight: 600,
+                            background: scanResult.networkDiagnostics.gateway.loss === 0 ? 'var(--color-success-glow)' : 'var(--color-critical-glow)',
+                            color: scanResult.networkDiagnostics.gateway.loss === 0 ? '#4ade80' : '#f87171'
+                          }}>
+                            {scanResult.networkDiagnostics.gateway.loss === 0 ? 'Линки стабильны' : `Потери: ${scanResult.networkDiagnostics.gateway.loss}%`}
+                          </span>
+                        </div>
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.75rem' }}>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Средний пинг</span>
+                            <p style={{ fontSize: '1.1rem', fontWeight: 700, color: scanResult.networkDiagnostics.gateway.avg < 3 ? '#4ade80' : '#fbbf24' }}>
+                              {scanResult.networkDiagnostics.gateway.avg} мс
+                            </p>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Джиттер (Jitter)</span>
+                            <p style={{ fontSize: '1.1rem', fontWeight: 700 }}>{scanResult.networkDiagnostics.gateway.jitter} мс</p>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Потери пакетов</span>
+                            <p style={{ fontSize: '1.1rem', fontWeight: 700, color: scanResult.networkDiagnostics.gateway.loss === 0 ? '#4ade80' : '#f87171' }}>
+                              {scanResult.networkDiagnostics.gateway.loss}%
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Internet Ping */}
+                      <div style={{ background: 'rgba(0,0,0,0.15)', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                        <div className="flex-between" style={{ marginBottom: '0.75rem' }}>
+                          <div>
+                            <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Внешний Интернет (Cloudflare DNS)</span>
+                            <h5 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginTop: '0.1rem' }}>{scanResult.networkDiagnostics.internet.ip}</h5>
+                          </div>
+                          <span style={{ 
+                            fontSize: '0.75rem', 
+                            padding: '0.25rem 0.5rem', 
+                            borderRadius: '4px',
+                            fontWeight: 600,
+                            background: scanResult.networkDiagnostics.internet.loss === 0 ? 'var(--color-success-glow)' : 'var(--color-critical-glow)',
+                            color: scanResult.networkDiagnostics.internet.loss === 0 ? '#4ade80' : '#f87171'
+                          }}>
+                            {scanResult.networkDiagnostics.internet.loss === 0 ? 'Интернет активен' : `Потери: ${scanResult.networkDiagnostics.internet.loss}%`}
+                          </span>
+                        </div>
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.75rem' }}>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Средний пинг</span>
+                            <p style={{ fontSize: '1.1rem', fontWeight: 700, color: scanResult.networkDiagnostics.internet.avg < 45 ? '#4ade80' : scanResult.networkDiagnostics.internet.avg < 100 ? '#fbbf24' : '#f87171' }}>
+                              {scanResult.networkDiagnostics.internet.avg} мс
+                            </p>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Джиттер (Jitter)</span>
+                            <p style={{ fontSize: '1.1rem', fontWeight: 700 }}>{scanResult.networkDiagnostics.internet.jitter} мс</p>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Потери пакетов</span>
+                            <p style={{ fontSize: '1.1rem', fontWeight: 700, color: scanResult.networkDiagnostics.internet.loss === 0 ? '#4ade80' : '#f87171' }}>
+                              {scanResult.networkDiagnostics.internet.loss}%
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DPI Shield */}
+                  <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ 
+                      padding: '1rem', 
+                      background: scanResult.networkDiagnostics.dpi.status === 'Detected' 
+                        ? 'rgba(239, 68, 68, 0.1)' 
+                        : scanResult.networkDiagnostics.dpi.status === 'Not Detected'
+                          ? 'rgba(74, 222, 128, 0.1)'
+                          : 'rgba(255, 255, 255, 0.05)', 
+                      borderRadius: '16px', 
+                      border: scanResult.networkDiagnostics.dpi.status === 'Detected' 
+                        ? '1px solid rgba(239, 68, 68, 0.2)' 
+                        : scanResult.networkDiagnostics.dpi.status === 'Not Detected'
+                          ? '1px solid rgba(74, 222, 128, 0.2)'
+                          : '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '80px',
+                      height: '80px',
+                      flexShrink: 0
+                    }}>
+                      {scanResult.networkDiagnostics.dpi.status === 'Detected' ? (
+                        <ShieldAlert size={42} style={{ color: 'var(--color-critical)' }} />
+                      ) : scanResult.networkDiagnostics.dpi.status === 'Not Detected' ? (
+                        <ShieldCheck size={42} style={{ color: 'var(--color-success)' }} />
+                      ) : (
+                        <AlertTriangle size={42} style={{ color: 'var(--color-warning)' }} />
+                      )}
+                    </div>
+                    
+                    <div style={{ flex: 1, minWidth: '250px' }}>
+                      <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>Анализ блокировок провайдера</span>
+                      <h4 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0.15rem 0 0.5rem 0', color: '#fff' }}>
+                        {scanResult.networkDiagnostics.dpi.status === 'Detected' 
+                          ? 'DPI Блокировки / Фильтрация обнаружена' 
+                          : scanResult.networkDiagnostics.dpi.status === 'Not Detected' 
+                            ? 'Следов DPI-фильтрации не обнаружено' 
+                            : 'Статус DPI-фильтрации не определен'}
+                      </h4>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                        {scanResult.networkDiagnostics.dpi.status === 'Detected' 
+                          ? 'Провайдер перехватывает и сбрасывает (ECONNRESET/Timeout) TLS-соединения с заблокированными SNI (например, instagram.com или rutracker.org) при отправке на публичные IP.' 
+                          : scanResult.networkDiagnostics.dpi.status === 'Not Detected' 
+                            ? 'Соединения с тестовыми доменами (instagram.com, rutracker.org) на публичный IP-адрес 1.1.1.1 проходят успешно, блокировка на уровне сигнатур SNI не наблюдается.' 
+                            : 'Не удалось завершить тест DPI из-за отсутствия стабильного интернет-соединения или полной блокировки порта 443 к серверу 1.1.1.1.'}
+                      </p>
+                      {scanResult.networkDiagnostics.dpi.status === 'Detected' && (
+                        <div style={{ marginTop: '0.75rem', padding: '0.6rem 0.8rem', background: 'rgba(239, 68, 68, 0.05)', borderLeft: '3px solid var(--color-critical)', borderRadius: '0 6px 6px 0', fontSize: '0.8rem', color: '#f87171' }}>
+                          💡 Рекомендация: используйте утилиты для обхода DPI (GoodbyeDPI, Zapret, ByeDPI) или VPN для восстановления доступа.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: CLIENT DEVICES */}
               {activeTab === 'clients' && (
                 <div className="glass-panel fade-in" style={{ padding: '1.5rem' }}>
                   <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Список активных хостов</h4>
@@ -968,6 +1433,13 @@ export default function App() {
               <span>Понятно, закрыть</span>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* 6. TOAST NOTIFICATION */}
+      {shareToast && (
+        <div className="share-toast fade-in">
+          <span>{shareToast}</span>
         </div>
       )}
     </div>

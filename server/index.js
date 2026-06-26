@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { scanWifi } from './wifi-scanner.js';
+import { runPingCheck, runDpiDetection } from './network-diagnostics.js';
 import { 
   scrapeKeenetic, 
   scrapeOpenWrt, 
@@ -42,8 +43,17 @@ app.post('/api/diagnose', async (req, res) => {
   const { ip, username, password, model } = req.body;
 
   try {
-    // 1. Scan Local Wi-Fi Environment first (macOS commands or fallback)
-    const wifiScan = await scanWifi();
+    const gatewayIp = ip || '192.168.1.1';
+
+    // 1. Scan Local Wi-Fi Environment and run network diagnostics in parallel
+    console.log(`[Diagnostics] Running parallel scans (Wi-Fi, pings to ${gatewayIp} and 1.1.1.1, DPI check)...`);
+    const [wifiScan, gatewayPing, internetPing, dpi] = await Promise.all([
+      scanWifi(),
+      runPingCheck(gatewayIp),
+      runPingCheck('1.1.1.1'),
+      runDpiDetection()
+    ]);
+
     const currentNet = wifiScan.find(n => n.isCurrent) || null;
 
     let routerConfig;
@@ -101,7 +111,7 @@ app.post('/api/diagnose', async (req, res) => {
     // 3. Execute Rule-Based Diagnostics Engine
     const diagnosticReport = runDiagnostics(routerConfig, wifiScan);
 
-    // Return the response, combining router data, wifi environment and recommendations
+    // Return the response, combining router data, wifi environment, diagnostics, and recommendations
     return res.json({
       routerInfo: {
         brand: routerConfig.brand,
@@ -122,7 +132,12 @@ app.post('/api/diagnose', async (req, res) => {
         clientRetrievalMethod: routerConfig.clientRetrievalMethod || 'router'
       },
       wifiEnvironment: wifiScan,
-      report: diagnosticReport
+      report: diagnosticReport,
+      networkDiagnostics: {
+        gateway: gatewayPing,
+        internet: internetPing,
+        dpi: dpi
+      }
     });
   } catch (err) {
     console.error('Diagnostics execution error:', err.message);
