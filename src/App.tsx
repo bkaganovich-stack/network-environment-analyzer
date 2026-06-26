@@ -16,7 +16,8 @@ import {
   X, 
   ArrowRight,
   Database,
-  CheckCircle2
+  CheckCircle2,
+  Power
 } from 'lucide-react';
 
 // Unified schema definitions
@@ -124,7 +125,7 @@ interface ScanResult {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<'connect' | 'scanning' | 'results'>('connect');
+  const [screen, setScreen] = useState<'connect' | 'scanning' | 'results' | 'shutdown'>('connect');
   const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
   const [formData, setFormData] = useState({
     ip: '192.168.1.1',
@@ -172,6 +173,17 @@ export default function App() {
       model: demo ? 'Keenetic (Demo)' : 'auto',
       password: ''
     }));
+  };
+
+  const handleExit = async () => {
+    if (window.confirm('Вы действительно хотите остановить работу Сетевого Радара и закрыть приложение?')) {
+      setScreen('shutdown');
+      try {
+        await fetch('/api/exit', { method: 'POST' });
+      } catch (err) {
+        // ignore because connection is closed as server shuts down
+      }
+    }
   };
 
   // Scanning sequence steps list
@@ -276,15 +288,23 @@ export default function App() {
   return (
     <div className="app-container">
       {/* HEADER */}
-      <header className="fade-in">
-        <h1 className="title-glow">
-          <span>📡</span> Сетевой Радар
-        </h1>
-        <div className="status-badge">
-          <Activity size={14} className="animate-pulse" />
-          <span>Локальный агент v1.0 (MVP)</span>
-        </div>
-      </header>
+      {screen !== 'shutdown' && (
+        <header className="fade-in">
+          <h1 className="title-glow">
+            <span>📡</span> Сетевой Радар
+          </h1>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <div className="status-badge">
+              <Activity size={14} className="animate-pulse" />
+              <span>Локальный агент v1.0 (MVP)</span>
+            </div>
+            <button className="exit-btn" onClick={handleExit} title="Остановить работу и выйти из приложения">
+              <Power size={14} />
+              <span>Выйти</span>
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* 1. CONNECTION SCREEN */}
       {screen === 'connect' && (
@@ -846,7 +866,33 @@ export default function App() {
         </div>
       )}
 
-      {/* 4. RECOMMENDATION CARD DETAIL SLIDE-OUT DRAWER */}
+      {/* 4. SHUTDOWN SCREEN */}
+      {screen === 'shutdown' && (
+        <div className="glass-panel fade-in" style={{ padding: '3rem', maxWidth: '500px', margin: '4rem auto 0 auto', textAlign: 'center' }}>
+          <div style={{ 
+            width: '64px', 
+            height: '64px', 
+            borderRadius: '50%', 
+            background: 'rgba(239, 68, 68, 0.1)', 
+            border: '1px solid rgba(239, 68, 68, 0.2)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            margin: '0 auto 1.5rem auto' 
+          }}>
+            <Power size={32} style={{ color: '#f87171' }} />
+          </div>
+          <h2 style={{ marginBottom: '1rem', fontWeight: 700 }}>Сетевой Радар остановлен</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2rem' }}>
+            Локальный агент успешно завершил свою работу и освободил сетевой порт. Теперь вы можете закрыть эту вкладку браузера.
+          </p>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            Для повторного запуска запустите команду запуска в терминале.
+          </div>
+        </div>
+      )}
+
+      {/* 5. RECOMMENDATION CARD DETAIL SLIDE-OUT DRAWER */}
       {selectedRec && (
         <div className="details-overlay" onClick={() => setSelectedRec(null)}>
           <div className="details-panel" onClick={(e) => e.stopPropagation()}>

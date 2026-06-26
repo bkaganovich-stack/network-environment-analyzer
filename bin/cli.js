@@ -15,6 +15,12 @@ const serverProcess = fork(serverPath, [], {
   env: { ...process.env, PORT: 3001 }
 });
 
+// Exit CLI wrapper when server stops
+serverProcess.on('exit', () => {
+  console.log('\x1b[33m%s\x1b[0m', '🛑 Локальный сервер остановлен. Завершение работы...');
+  process.exit(0);
+});
+
 // Wait 1.5 seconds for Express to bind to port, then open the browser
 setTimeout(() => {
   const url = 'http://localhost:3001';

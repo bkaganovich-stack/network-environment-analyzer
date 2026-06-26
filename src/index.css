@@ -503,3 +503,27 @@ select.form-control {
 .client-item:hover {
   background: rgba(255, 255, 255, 0.02);
 }
+
+.exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: #f87171;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: none;
+  font-family: inherit;
+}
+
+.exit-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.1);
+}

@@ -132,6 +132,16 @@ app.post('/api/diagnose', async (req, res) => {
   }
 });
 
+// Graceful shutdown endpoint
+app.post('/api/exit', (req, res) => {
+  console.log('[Server] Shutdown requested via Web UI...');
+  res.json({ success: true, message: 'Server is shutting down.' });
+  setTimeout(() => {
+    console.log('[Server] Exiting process...');
+    process.exit(0);
+  }, 500);
+});
+
 // Fallback to serving index.html for React router support (SPA frontend)
 app.get('*splat', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'), (err) => {
